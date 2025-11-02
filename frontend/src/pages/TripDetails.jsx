@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
+import { API_BASE } from '../lib/api'
 
 const TripDetails = () => {
   const { id } = useParams()
@@ -15,11 +16,11 @@ const TripDetails = () => {
     const load = async () => {
       setError('')
       try {
-        const resp = await fetch(`http://localhost:4000/api/trips/${id}`)
+        const resp = await fetch(`${API_BASE}/api/trips/${id}`)
         const data = await resp.json()
         if (!resp.ok) throw new Error(data?.error || 'Failed to load')
         setTrip(data)
-        const presp = await fetch(`http://localhost:4000/api/trips/${id}/participants`)
+        const presp = await fetch(`${API_BASE}/api/trips/${id}/participants`)
         const pdata = await presp.json()
         const plist = Array.isArray(pdata) ? pdata : []
         setParticipants(plist.map(p => ({ name: p.walletAddress.substring(0, 8) + '...', checkedIn: true })))
@@ -75,12 +76,12 @@ const TripDetails = () => {
       }
 
       // Request Petra to sign and submit transaction
-      await w.aptos.signAndSubmitTransaction(payload)
+      const tx = await w.aptos.signAndSubmitTransaction(payload)
 
-      const resp = await fetch(`http://localhost:4000/api/trips/${id}/checkin`, {
+      const resp = await fetch(`${API_BASE}/api/trips/${id}/checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress })
+        body: JSON.stringify({ walletAddress, txHash: tx?.hash || null, amountOctas: String(octas), status: 'success', network: 'unknown' })
       })
       const data = await resp.json()
       if (!resp.ok) throw new Error(data?.error || 'Check-in failed')
@@ -92,6 +93,19 @@ const TripDetails = () => {
       }
       alert('✅ Check-in successful!')
     } catch (e) {
+      try {
+        const w = typeof window !== 'undefined' ? window : undefined
+        if (w && w.aptos && trip) {
+          const recipient = trip.organizer
+          const amountApt = Number(trip?.amount) || 0
+          const octas = Math.floor(amountApt * 1e8)
+          await fetch(`${API_BASE}/api/trips/${id}/checkin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walletAddress, txHash: null, amountOctas: String(octas), status: 'failed', network: 'unknown' })
+          })
+        }
+      } catch {}
       alert('Check-in failed')
     }
   }

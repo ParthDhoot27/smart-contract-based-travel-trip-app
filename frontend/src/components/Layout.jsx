@@ -30,12 +30,6 @@ const Layout = ({ children }) => {
             <div className="flex items-center space-x-4">
               {isConnected ? (
                 <div className="flex items-center space-x-3">
-                  <Link
-                    to="/profile"
-                    className="text-sm text-primary-600 hover:text-primary-700 font-medium"
-                  >
-                    Profile
-                  </Link>
                   <span className="text-sm text-gray-600">
                     {walletAddress?.substring(0, 6)}...{walletAddress?.substring(38)}
                   </span>

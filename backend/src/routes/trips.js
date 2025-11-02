@@ -15,6 +15,28 @@ export default function createTripsRouter(store) {
     }
   })
 
+  // List trips created by organizer
+  router.get('/organizer/:walletAddress', async (req, res, next) => {
+    try {
+      const { walletAddress } = req.params
+      const rows = await store.trips.listByOrganizer(walletAddress)
+      return res.json(rows)
+    } catch (e) {
+      next(e)
+    }
+  })
+
+  // List trips joined by participant
+  router.get('/participant/:walletAddress', async (req, res, next) => {
+    try {
+      const { walletAddress } = req.params
+      const rows = await store.trips.listByParticipant(walletAddress)
+      return res.json(rows)
+    } catch (e) {
+      next(e)
+    }
+  })
+
   router.get('/:id/participants', async (req, res, next) => {
     try {
       const { id } = req.params
@@ -107,13 +129,38 @@ export default function createTripsRouter(store) {
   router.post('/:id/checkin', async (req, res, next) => {
     try {
       const { id } = req.params
-      const { walletAddress } = req.body
+      const { walletAddress, txHash, amountOctas, status, network } = req.body
       if (!walletAddress) return res.status(400).json({ error: 'walletAddress required' })
 
       const result = await store.trips.checkin(id, walletAddress)
       if (result.notFound) return res.status(404).json({ error: 'Trip not found' })
       if (result.already) return res.status(409).json({ error: 'Already checked in' })
+      // Optional: log transaction if provided
+      if (store.transactions && (txHash || status)) {
+        try {
+          await store.transactions.log({ tripId: id, from: walletAddress, to: undefined, amountOctas: amountOctas || '0', status: status || 'success', hash: txHash || null, network: network || 'unknown' })
+        } catch (e) {
+          // non-fatal
+          console.warn('tx log failed', e?.message || e)
+        }
+      }
       return res.json({ success: true, participants: result.participants })
+    } catch (e) {
+      next(e)
+    }
+  })
+
+  // Delete a trip (requires organizer match in body)
+  router.delete('/:id', async (req, res, next) => {
+    try {
+      const { id } = req.params
+      const { walletAddress } = req.body || {}
+      if (!walletAddress) return res.status(400).json({ error: 'walletAddress required' })
+      const trip = await store.trips.getById(id)
+      if (!trip) return res.status(404).json({ error: 'Trip not found' })
+      if (trip.organizer !== walletAddress) return res.status(403).json({ error: 'Only organizer can delete this trip' })
+      const out = await store.trips.delete(id)
+      return res.json(out)
     } catch (e) {
       next(e)
     }

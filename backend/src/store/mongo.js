@@ -41,9 +41,23 @@ const participantSchema = new mongoose.Schema(
 )
 participantSchema.index({ tripId: 1, walletAddress: 1 }, { unique: true })
 
+const transactionSchema = new mongoose.Schema(
+  {
+    tripId: { type: String, index: true },
+    from: { type: String, required: true },
+    to: { type: String, required: true },
+    amountOctas: { type: String, required: true },
+    status: { type: String, enum: ['submitted', 'success', 'failed'], required: true },
+    hash: { type: String },
+    network: { type: String, default: 'unknown' },
+  },
+  { timestamps: true }
+)
+
 const User = mongoose.models.User || mongoose.model('User', userSchema)
 const Trip = mongoose.models.Trip || mongoose.model('Trip', tripSchema)
 const Participant = mongoose.models.Participant || mongoose.model('Participant', participantSchema)
+const Transaction = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema)
 
 export async function connectMongo(uri) {
   if (!uri) return null
@@ -62,6 +76,8 @@ export const users = {
       profileImage: doc.profileImage || null,
       age: doc.age ?? null,
       locked: !!doc.locked,
+      createdTrips: Array.isArray(doc.createdTrips) ? doc.createdTrips : [],
+      joinedTrips: Array.isArray(doc.joinedTrips) ? doc.joinedTrips : [],
     }
   },
   async upsert({ walletAddress, username, profileImage, age }) {
@@ -138,6 +154,12 @@ export const trips = {
   async create(doc) {
     const tripId = doc.id || String(Date.now())
     try {
+      // Prevent duplicates by same organizer+title+date
+      const existing = await Trip.findOne({ organizer: doc.organizer, title: doc.title, date: doc.date }).lean()
+      if (existing) {
+        const participants = await Participant.countDocuments({ tripId: existing.id })
+        return mapTrip(existing, participants)
+      }
       await Trip.create({
         id: tripId,
         title: doc.title,
@@ -182,5 +204,25 @@ export const trips = {
   async listParticipants(id) {
     const parts = await Participant.find({ tripId: id }).sort({ joinedAt: 1 }).lean()
     return parts.map(p => ({ walletAddress: p.walletAddress }))
+  },
+  async delete(id) {
+    // Remove trip, its participants, and references from users
+    await Trip.deleteOne({ id })
+    const participants = await Participant.find({ tripId: id }).lean()
+    const wallets = participants.map(p => p.walletAddress)
+    await Participant.deleteMany({ tripId: id })
+    if (wallets.length > 0) {
+      await User.updateMany({ walletAddress: { $in: wallets } }, { $pull: { joinedTrips: id } })
+    }
+    // remove from any organizer createdTrips
+    await User.updateMany({ createdTrips: id }, { $pull: { createdTrips: id } })
+    return { deleted: true }
+  },
+}
+
+export const transactions = {
+  async log({ tripId, from, to, amountOctas, status, hash, network }) {
+    await Transaction.create({ tripId: tripId || null, from, to, amountOctas: String(amountOctas), status, hash: hash || null, network: network || 'unknown' })
+    return { ok: true }
   },
 }

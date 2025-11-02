@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { API_BASE } from '../lib/api'
 
 export default function WalletVerify() {
   const [wallet, setWallet] = useState('')
@@ -13,7 +14,7 @@ export default function WalletVerify() {
     if (!wallet.trim()) return
     setLoading(true)
     try {
-      const resp = await fetch(`http://localhost:4000/api/auth/nonce?wallet=${encodeURIComponent(wallet.trim())}`)
+      const resp = await fetch(`${API_BASE}/api/auth/nonce?wallet=${encodeURIComponent(wallet.trim())}`)
       const data = await resp.json()
       if (!resp.ok) throw new Error(data?.error || 'Failed to get nonce')
       setNonce(data.nonce)
@@ -31,7 +32,7 @@ export default function WalletVerify() {
     try {
       // NOTE: In production you should sign the nonce with Petra and send the signature.
       // For now we submit the nonce as-is to backend stub.
-      const resp = await fetch('http://localhost:4000/api/auth/verify', {
+      const resp = await fetch(`${API_BASE}/api/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress: wallet.trim(), nonce })

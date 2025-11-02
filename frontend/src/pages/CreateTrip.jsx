@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
+import { API_BASE } from '../lib/api'
 
 const CreateTrip = () => {
   const { isConnected, walletAddress, addCreatedTrip } = useWallet()
@@ -65,35 +66,48 @@ const CreateTrip = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase()
   }
 
-  const handleConfirm = () => {
-    const code = formData.type === 'private' 
-      ? (formData.codeOption === 'custom' ? formData.customCode : generateCode())
-      : null
-    
-    const newTrip = {
-      id: Date.now().toString(),
-      title: formData.title,
-      destination: formData.destination,
-      date: formData.date,
-      amount: formData.amount,
-      deadline: formData.deadline,
-      endDate: formData.endDate,
-      description: formData.description,
-      type: formData.type,
-      code: code,
-      organizer: walletAddress,
-      organizerName: walletAddress.substring(0, 8) + '...',
-      participants: 0,
-    }
-    
-    addCreatedTrip(newTrip)
-    setShowModal(false)
-    
-    if (formData.type === 'private' && code) {
-      setTripCode(code)
-      setShowCodeModal(true)
-    } else {
-      navigate('/dashboard')
+  const [creating, setCreating] = useState(false)
+  const handleConfirm = async () => {
+    if (creating) return
+    setCreating(true)
+    try {
+      const code = formData.type === 'private' 
+        ? (formData.codeOption === 'custom' ? formData.customCode : generateCode())
+        : null
+
+      const payload = {
+        title: formData.title,
+        description: formData.description,
+        destination: formData.destination,
+        date: formData.date,
+        endDate: formData.endDate,
+        amount: Number(formData.amount),
+        deadline: formData.deadline,
+        type: formData.type,
+        codeOption: formData.codeOption,
+        customCode: formData.codeOption === 'custom' ? formData.customCode : undefined,
+        organizer: walletAddress,
+        organizerName: walletAddress.substring(0, 8) + '...',
+      }
+      const resp = await fetch(`${API_BASE}/api/trips`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      const created = await resp.json()
+      if (!resp.ok) throw new Error(created?.error || 'Failed to create trip')
+      addCreatedTrip(created)
+      setShowModal(false)
+      if (created.type === 'private' && created.code) {
+        setTripCode(created.code)
+        setShowCodeModal(true)
+      } else {
+        navigate('/dashboard')
+      }
+    } catch (e) {
+      alert(e?.message || 'Failed to create trip')
+    } finally {
+      setCreating(false)
     }
   }
 

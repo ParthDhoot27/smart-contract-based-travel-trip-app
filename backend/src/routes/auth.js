@@ -46,14 +46,6 @@ export default function createAuthRouter(store) {
       }
 
       const derived = deriveProfileFromWallet(walletAddress)
-      // Optionally cache into DB (username/age may be sourced from wallet on frontend)
-      await store.users.upsert({
-        walletAddress: derived.walletAddress,
-        username: derived.username,
-        profileImage: null,
-        age: derived.age,
-      })
-
       // Issue a simple mock token (for demo only)
       const token = Buffer.from(`${walletAddress}:${Date.now()}`).toString('base64')
 

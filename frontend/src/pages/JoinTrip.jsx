@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { API_BASE } from '../lib/api'
 
 const JoinTrip = () => {
   const navigate = useNavigate()
@@ -13,7 +14,7 @@ const JoinTrip = () => {
       setLoading(true)
       setError('')
       try {
-        const resp = await fetch('http://localhost:4000/api/trips')
+        const resp = await fetch(`${API_BASE}/api/trips`)
         const data = await resp.json()
         if (!resp.ok) throw new Error(data?.error || 'Failed to load trips')
         setUniversalTrips(Array.isArray(data) ? data : [])

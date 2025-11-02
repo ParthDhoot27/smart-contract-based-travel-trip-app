@@ -1,8 +1,38 @@
 import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { useWallet } from '../context/WalletContext'
+import { API_BASE } from '../lib/api'
 
 const Dashboard = () => {
-  const { isConnected, createdTrips, joinedTrips } = useWallet()
+  const { isConnected, walletAddress } = useWallet()
+  const [createdTrips, setCreatedTrips] = useState([])
+  const [joinedTrips, setJoinedTrips] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const load = async () => {
+      if (!isConnected || !walletAddress) return
+      setLoading(true)
+      setError('')
+      try {
+        const [cResp, jResp] = await Promise.all([
+          fetch(`${API_BASE}/api/trips/organizer/${walletAddress}`),
+          fetch(`${API_BASE}/api/trips/participant/${walletAddress}`),
+        ])
+        const [cData, jData] = await Promise.all([cResp.json(), jResp.json()])
+        if (!cResp.ok) throw new Error(cData?.error || 'Failed to load created trips')
+        if (!jResp.ok) throw new Error(jData?.error || 'Failed to load joined trips')
+        setCreatedTrips(Array.isArray(cData) ? cData : [])
+        setJoinedTrips(Array.isArray(jData) ? jData : [])
+      } catch (e) {
+        setError(e?.message || 'Failed to load trips')
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [isConnected, walletAddress])
 
   if (!isConnected) {
     return (
@@ -50,7 +80,9 @@ const Dashboard = () => {
         {/* My Created Trips */}
         <div className="mb-12">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">📝 My Created Trips</h2>
-          {createdTrips.length === 0 ? (
+          {loading ? (
+            <div className="bg-white p-8 rounded-xl shadow text-center">Loading...</div>
+          ) : createdTrips.length === 0 ? (
             <div className="bg-white p-8 rounded-xl shadow text-center">
               <div className="text-4xl mb-3">📝</div>
               <p className="text-gray-600 text-lg">You haven't created any trips yet.</p>
@@ -88,7 +120,9 @@ const Dashboard = () => {
         {/* My Joined Trips */}
         <div>
           <h2 className="text-2xl font-bold text-gray-900 mb-6">👥 My Joined Trips</h2>
-          {joinedTrips.length === 0 ? (
+          {loading ? (
+            <div className="bg-white p-8 rounded-xl shadow text-center">Loading...</div>
+          ) : joinedTrips.length === 0 ? (
             <div className="bg-white p-8 rounded-xl shadow text-center">
               <div className="text-4xl mb-3">✈️</div>
               <p className="text-gray-600 text-lg">You haven't joined any trips yet.</p>

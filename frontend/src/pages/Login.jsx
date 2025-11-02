@@ -1,6 +1,7 @@
 import { useMemo, useState, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
+import { API_BASE } from '../lib/api'
 
 const Login = () => {
   const { connectWallet, connectWithPetra, isConnected, setProfile } = useWallet()
@@ -38,7 +39,7 @@ const Login = () => {
     setIsConnecting(true)
     try {
       const addr = await connectWithPetra()
-      const vresp = await fetch('http://localhost:4000/api/auth/petra/verify', {
+      const vresp = await fetch(`${API_BASE}/api/auth/petra/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress: addr })
@@ -46,7 +47,7 @@ const Login = () => {
       const vdata = await vresp.json()
       if (!vresp.ok || !vdata?.verified) throw new Error(vdata?.error || 'Verification failed')
 
-      const resp = await fetch('http://localhost:4000/api/auth/petra', {
+      const resp = await fetch(`${API_BASE}/api/auth/petra`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress: addr })
@@ -71,7 +72,7 @@ const Login = () => {
       setAuthError('')
       try {
         // Lock profile on backend
-        const resp = await fetch('http://localhost:4000/api/auth/register', {
+        const resp = await fetch(`${API_BASE}/api/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ walletAddress: urlWallet, fullName: regFullName.trim(), age: Number(regAge) })
@@ -125,7 +126,7 @@ const Login = () => {
       await new Promise(resolve => setTimeout(resolve, 300))
       const addr = walletInput.trim()
       // Step 1: verify Petra wallet ownership (stubbed backend verification)
-      const vresp = await fetch('http://localhost:4000/api/auth/petra/verify', {
+      const vresp = await fetch(`${API_BASE}/api/auth/petra/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress: addr })
@@ -136,7 +137,7 @@ const Login = () => {
       }
 
       // Step 2: perform backend auth/session bootstrap
-      const resp = await fetch('http://localhost:4000/api/auth/petra', {
+      const resp = await fetch(`${API_BASE}/api/auth/petra`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress: addr })
