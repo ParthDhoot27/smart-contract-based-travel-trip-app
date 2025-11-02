@@ -37,6 +37,46 @@ const TripDetails = () => {
       return
     }
     try {
+      // Ensure Petra is available
+      const w = typeof window !== 'undefined' ? window : undefined
+      if (!w || !w.aptos) {
+        alert('Petra wallet is not installed. Please install Petra and try again.')
+        return
+      }
+
+      // Build on-chain payment: transfer APT to organizer
+      let recipient = trip?.organizer
+      if (!recipient) {
+        alert('Organizer address not available for payment.')
+        return
+      }
+      // Normalize and validate Aptos address
+      const strip0x = String(recipient).startsWith('0x') ? String(recipient).slice(2) : String(recipient)
+      const isHex = /^[0-9a-fA-F]+$/.test(strip0x)
+      if (!isHex || strip0x.length === 0) {
+        alert('Organizer address is not a valid hex Aptos address. Please contact the organizer or try another trip.')
+        return
+      }
+      const evenHex = strip0x.length % 2 === 1 ? '0' + strip0x : strip0x
+      recipient = '0x' + evenHex.toLowerCase()
+      const amountApt = Number(trip?.amount) || 0
+      // Convert APT to octas (1 APT = 1e8 octas)
+      const octas = Math.floor(amountApt * 1e8)
+      if (octas <= 0) {
+        alert('Invalid trip amount for on-chain payment.')
+        return
+      }
+
+      const payload = {
+        type: 'entry_function_payload',
+        function: '0x1::coin::transfer',
+        type_arguments: ['0x1::aptos_coin::AptosCoin'],
+        arguments: [recipient, String(octas)],
+      }
+
+      // Request Petra to sign and submit transaction
+      await w.aptos.signAndSubmitTransaction(payload)
+
       const resp = await fetch(`http://localhost:4000/api/trips/${id}/checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

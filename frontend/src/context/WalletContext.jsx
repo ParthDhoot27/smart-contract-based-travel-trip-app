@@ -26,6 +26,16 @@ export const WalletProvider = ({ children }) => {
     return finalAddress
   }
 
+  const connectWithPetra = async () => {
+    const w = typeof window !== 'undefined' ? window : undefined
+    if (!w || !w.aptos) {
+      throw new Error('Petra wallet is not installed')
+    }
+    const res = await w.aptos.connect()
+    const addr = res?.address || (await w.aptos.account())?.address
+    return connectWallet(addr)
+  }
+
   const disconnectWallet = () => {
     setWalletAddress(null)
     setIsConnected(false)
@@ -50,6 +60,7 @@ export const WalletProvider = ({ children }) => {
     walletAddress,
     isConnected,
     connectWallet,
+    connectWithPetra,
     disconnectWallet,
     createdTrips,
     joinedTrips,

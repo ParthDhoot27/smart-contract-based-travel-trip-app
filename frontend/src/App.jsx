@@ -16,7 +16,7 @@ function App() {
       <Router>
         <Layout>
           <Routes>
-            <Route path="/" element={<WalletVerify />} />
+            <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/verify" element={<WalletVerify />} />
             <Route path="/dashboard" element={<Dashboard />} />

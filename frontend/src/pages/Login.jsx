@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
 
 const Login = () => {
-  const { connectWallet, isConnected, setProfile } = useWallet()
+  const { connectWallet, connectWithPetra, isConnected, setProfile } = useWallet()
   const navigate = useNavigate()
   const location = useLocation()
   const urlWallet = useMemo(() => {
@@ -31,6 +31,35 @@ const Login = () => {
 
   const handleConnect = async () => {
     setShowWalletDialog(true)
+  }
+
+  const handleConnectPetra = async () => {
+    setAuthError('')
+    setIsConnecting(true)
+    try {
+      const addr = await connectWithPetra()
+      const vresp = await fetch('http://localhost:4000/api/auth/petra/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress: addr })
+      })
+      const vdata = await vresp.json()
+      if (!vresp.ok || !vdata?.verified) throw new Error(vdata?.error || 'Verification failed')
+
+      const resp = await fetch('http://localhost:4000/api/auth/petra', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress: addr })
+      })
+      const data = await resp.json()
+      if (!resp.ok) throw new Error(data?.error || 'Login failed')
+      setProfile({ username: data?.user?.username || '', profileImage: null })
+      navigate('/dashboard')
+    } catch (e) {
+      setAuthError(e?.message || 'Failed to connect Petra')
+    } finally {
+      setIsConnecting(false)
+    }
   }
 
   // Strict registration view if coming from verification with wallet param
@@ -240,7 +269,7 @@ const Login = () => {
             <div className="mt-8 space-y-6">
               {/* Petra Wallet Button */}
               <button
-                onClick={handleConnect}
+                onClick={handleConnectPetra}
                 disabled={isConnecting || isConnected}
                 className="w-full flex items-center justify-center space-x-3 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-lg transition shadow-lg"
               >
