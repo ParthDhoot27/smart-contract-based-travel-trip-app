@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 
 const WalletContext = createContext()
 
@@ -23,6 +23,10 @@ export const WalletProvider = ({ children }) => {
       : '0x' + Math.random().toString(16).substr(2, 40)
     setWalletAddress(finalAddress)
     setIsConnected(true)
+    try {
+      sessionStorage.setItem('walletAddress', finalAddress)
+      sessionStorage.setItem('isConnected', 'true')
+    } catch (_) {}
     return finalAddress
   }
 
@@ -43,6 +47,11 @@ export const WalletProvider = ({ children }) => {
     setCreatedTrips([])
     setJoinedTrips([])
     setUserProfile(null)
+    try {
+      sessionStorage.removeItem('walletAddress')
+      sessionStorage.removeItem('isConnected')
+      sessionStorage.removeItem('userProfile')
+    } catch (_) {}
   }
 
   const addCreatedTrip = (trip) => {
@@ -55,7 +64,54 @@ export const WalletProvider = ({ children }) => {
 
   const setProfile = (profile) => {
     setUserProfile(profile)
+    try {
+      sessionStorage.setItem('userProfile', JSON.stringify(profile || null))
+    } catch (_) {}
   }
+
+  const switchWallet = async () => {
+    try {
+      const w = typeof window !== 'undefined' ? window : undefined
+      if (w && w.aptos && typeof w.aptos.disconnect === 'function') {
+        await w.aptos.disconnect()
+      }
+    } catch (_) {}
+    disconnectWallet()
+  }
+
+  useEffect(() => {
+    try {
+      const savedConnected = sessionStorage.getItem('isConnected') === 'true'
+      const savedAddr = sessionStorage.getItem('walletAddress')
+      const savedProfileStr = sessionStorage.getItem('userProfile')
+      const savedProfile = savedProfileStr ? JSON.parse(savedProfileStr) : null
+      if (savedConnected && savedAddr) {
+        setWalletAddress(savedAddr)
+        setIsConnected(true)
+      }
+      if (savedProfile) {
+        setUserProfile(savedProfile)
+      }
+    } catch (_) {}
+    // Subscribe to wallet account change if available
+    const w = typeof window !== 'undefined' ? window : undefined
+    let offAccount
+    try {
+      if (w && w.aptos && typeof w.aptos.onAccountChange === 'function') {
+        offAccount = w.aptos.onAccountChange((account) => {
+          const next = account?.address
+          if (next) {
+            connectWallet(next)
+          } else {
+            disconnectWallet()
+          }
+        })
+      }
+    } catch (_) {}
+    return () => {
+      try { if (typeof offAccount === 'function') offAccount() } catch (_) {}
+    }
+  }, [])
 
   const value = {
     walletAddress,
@@ -69,6 +125,7 @@ export const WalletProvider = ({ children }) => {
     addJoinedTrip,
     userProfile,
     setProfile,
+    switchWallet,
   }
 
   return (
