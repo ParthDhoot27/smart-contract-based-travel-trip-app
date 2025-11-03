@@ -33,7 +33,8 @@ export const WalletProvider = ({ children }) => {
     }
     const res = await w.aptos.connect()
     const addr = res?.address || (await w.aptos.account())?.address
-    return connectWallet(addr)
+    // Do not mark app state as connected yet; caller will connect after backend auth
+    return addr
   }
 
   const disconnectWallet = () => {

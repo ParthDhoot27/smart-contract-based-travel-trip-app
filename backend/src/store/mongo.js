@@ -139,6 +139,33 @@ export const trips = {
     const countMap = new Map(counts.map((c) => [c._id, c.c]))
     return docs.map((d) => mapTrip(d, countMap.get(d.id) || 0))
   },
+  async listByOrganizer(walletAddress) {
+    const docs = await Trip.find({ organizer: walletAddress }).sort({ createdAt: -1 }).lean()
+    const ids = docs.map((d) => d.id)
+    if (ids.length === 0) return []
+    const counts = await Participant.aggregate([
+      { $match: { tripId: { $in: ids } } },
+      { $group: { _id: '$tripId', c: { $sum: 1 } } },
+    ])
+    const countMap = new Map(counts.map((c) => [c._id, c.c]))
+    return docs.map((d) => mapTrip(d, countMap.get(d.id) || 0))
+  },
+  async listByParticipant(walletAddress) {
+    const parts = await Participant.find({ walletAddress }).lean()
+    const ids = parts.map((p) => p.tripId)
+    if (ids.length === 0) return []
+    const docs = await Trip.find({ id: { $in: ids } }).lean()
+    const counts = await Participant.aggregate([
+      { $match: { tripId: { $in: ids } } },
+      { $group: { _id: '$tripId', c: { $sum: 1 } } },
+    ])
+    const countMap = new Map(counts.map((c) => [c._id, c.c]))
+    // Keep response in a stable order (most recent join first based on Participant.joinedAt)
+    const order = new Map(ids.map((id, idx) => [id, idx]))
+    return docs
+      .map((d) => mapTrip(d, countMap.get(d.id) || 0))
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+  },
   async getById(id) {
     const t = await Trip.findOne({ id }).lean()
     if (!t) return null

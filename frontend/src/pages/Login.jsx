@@ -68,6 +68,7 @@ const Login = () => {
       })
       const data = await resp.json()
       if (!resp.ok) throw new Error(data?.error || 'Login failed')
+      connectWallet(addr)
       setProfile({ username: data?.user?.username || '', profileImage: null })
       navigate('/dashboard')
     } catch (e) {
