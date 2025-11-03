@@ -47,6 +47,20 @@ const Login = () => {
       const vdata = await vresp.json()
       if (!vresp.ok || !vdata?.verified) throw new Error(vdata?.error || 'Verification failed')
 
+      // Check if user already exists and is locked (registered)
+      let existing = null
+      try {
+        const uresp = await fetch(`${API_BASE}/api/users/${addr}`)
+        if (uresp.ok) existing = await uresp.json()
+      } catch (_) {}
+
+      // New user or not locked -> go to strict registration view
+      if (!existing || existing.locked === false) {
+        navigate(`/login?wallet=${addr}`)
+        return
+      }
+
+      // Existing locked user -> complete auth and go to dashboard
       const resp = await fetch(`${API_BASE}/api/auth/petra`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,7 +150,23 @@ const Login = () => {
         throw new Error(vdata?.error || 'Verification failed')
       }
 
-      // Step 2: perform backend auth/session bootstrap
+      // Check user existence/lock status
+      let existing = null
+      try {
+        const uresp = await fetch(`${API_BASE}/api/users/${addr}`)
+        if (uresp.ok) existing = await uresp.json()
+      } catch (_) {}
+
+      // New user or not locked -> close dialog and go to registration view
+      if (!existing || existing.locked === false) {
+        setShowWalletDialog(false)
+        setWalletInput('')
+        setAuthError('')
+        navigate(`/login?wallet=${addr}`)
+        return
+      }
+
+      // Step 2: perform backend auth/session bootstrap for existing user
       const resp = await fetch(`${API_BASE}/api/auth/petra`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
