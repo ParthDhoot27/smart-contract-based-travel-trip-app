@@ -16,7 +16,9 @@ async function start() {
 
   const store = await initStore()
   console.log(`Store driver: ${store.driver}`)
-  await seedDemo(store)
+  if (process.env.SEED_DEMO === 'true') {
+    await seedDemo(store)
+  }
 
   app.use(cors({ origin: true }))
   app.use(express.json({ limit: '5mb' }))

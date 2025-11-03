@@ -189,12 +189,6 @@ export const trips = {
   async create(doc) {
     const tripId = doc.id || nano()
     try {
-      // Prevent duplicates by same organizer+title+date
-      const existing = await Trip.findOne({ organizer: doc.organizer, title: doc.title, date: doc.date }).lean()
-      if (existing) {
-        const participants = await Participant.countDocuments({ tripId: existing.id })
-        return mapTrip(existing, participants)
-      }
       await Trip.create({
         id: tripId,
         title: doc.title,

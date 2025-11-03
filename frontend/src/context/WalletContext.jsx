@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { API_BASE } from '../lib/api'
 
 const WalletContext = createContext()
 
@@ -112,6 +113,21 @@ export const WalletProvider = ({ children }) => {
       try { if (typeof offAccount === 'function') offAccount() } catch (_) {}
     }
   }, [])
+
+  useEffect(() => {
+    // If connected but no profile loaded, fetch it to get username for navbar
+    const maybeFetchProfile = async () => {
+      if (!isConnected || !walletAddress || userProfile) return
+      try {
+        const resp = await fetch(`${API_BASE}/api/users/${walletAddress}`)
+        if (resp.ok) {
+          const u = await resp.json()
+          setProfile({ username: u?.username || u?.fullName || '', profileImage: u?.profileImage || null })
+        }
+      } catch (_) {}
+    }
+    maybeFetchProfile()
+  }, [isConnected, walletAddress])
 
   const value = {
     walletAddress,

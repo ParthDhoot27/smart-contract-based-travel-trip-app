@@ -25,13 +25,16 @@ const TripDetails = () => {
         const presp = await fetch(`${API_BASE}/api/trips/${id}/participants`)
         const pdata = await presp.json()
         const plist = Array.isArray(pdata) ? pdata : []
-        setParticipants(plist.map(p => ({ name: p.name || (p.walletAddress.substring(0, 8) + '...'), checkedIn: true })))
+        setParticipants(plist.map(p => ({ walletAddress: p.walletAddress, name: p.name || (p.walletAddress.substring(0, 8) + '...'), checkedIn: true })))
+        if (plist.find(p => p.walletAddress?.toLowerCase() === (walletAddress || '').toLowerCase())) {
+          setHasCheckedIn(true)
+        }
       } catch (e) {
         setError('Failed to load trip')
       }
     }
     load()
-  }, [id])
+  }, [id, walletAddress])
 
   const handleCheckIn = async () => {
     if (!isConnected) {
@@ -82,7 +85,7 @@ const TripDetails = () => {
       }
 
       // Request Petra to sign and submit transaction
-      const tx = await w.aptos.signAndSubmitTransaction(payload)
+      const tx = await w.aptos.signAndSubmitTransaction({ payload })
 
       const resp = await fetch(`${API_BASE}/api/trips/${id}/checkin`, {
         method: 'POST',
@@ -90,9 +93,23 @@ const TripDetails = () => {
         body: JSON.stringify({ walletAddress, name: userProfile?.username || null, txHash: tx?.hash || null, amountOctas: String(octas), status: 'success', network: 'unknown' })
       })
       const data = await resp.json()
-      if (!resp.ok) throw new Error(data?.error || 'Check-in failed')
+      if (!resp.ok) {
+        if (resp.status === 409) {
+          // Already checked in or not open
+          if (data?.error && String(data.error).toLowerCase().includes('already')) {
+            setHasCheckedIn(true)
+            alert('You have already checked in for this trip.')
+            return
+          }
+          if (data?.error && String(data.error).toLowerCase().includes('not open')) {
+            alert('Trip is not open for check-in')
+            return
+          }
+        }
+        throw new Error(data?.error || 'Check-in failed')
+      }
       setHasCheckedIn(true)
-      const newParticipant = { name: userProfile?.username || (walletAddress.substring(0, 8) + '...'), checkedIn: true }
+      const newParticipant = { walletAddress, name: userProfile?.username || (walletAddress.substring(0, 8) + '...'), checkedIn: true }
       setParticipants([...participants, newParticipant])
       if (trip) {
         addJoinedTrip({ ...trip, participants: (trip.participants || 0) + 1 })
@@ -301,7 +318,7 @@ const TripDetails = () => {
             </div>
           </div>
 
-          {/* Check-in Button - Only show if not organizer */}
+          {/* Participant actions */}
           {!isOrganizer && (
             <>
               {/* Refund Policy Note */}
@@ -314,19 +331,26 @@ const TripDetails = () => {
                 </div>
               </div>
 
-              <div className="flex space-x-4">
-                <button
-                  onClick={handleCheckIn}
-                  disabled={hasCheckedIn || (trip && trip.status && trip.status !== 'open')}
-                  className={`flex-1 font-semibold py-4 px-6 rounded-lg transition ${
-                    hasCheckedIn || (trip && trip.status && trip.status !== 'open')
-                      ? 'bg-gray-400 cursor-not-allowed'
-                      : 'bg-primary-600 hover:bg-primary-700'
-                  } text-white`}
-                >
-                  {hasCheckedIn ? '✓ Already Checked In' : (trip && trip.status && trip.status !== 'open') ? 'Not Open' : 'Check-in'}
-                </button>
-              </div>
+              {hasCheckedIn ? (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-800">
+                  <div className="font-semibold mb-1">You have already checked in.</div>
+                  <div className="text-sm">Trip starts on {new Date(trip.date).toLocaleDateString()}.</div>
+                </div>
+              ) : (
+                <div className="flex space-x-4">
+                  <button
+                    onClick={handleCheckIn}
+                    disabled={(trip && trip.status && trip.status !== 'open')}
+                    className={`flex-1 font-semibold py-4 px-6 rounded-lg transition ${
+                      (trip && trip.status && trip.status !== 'open')
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-primary-600 hover:bg-primary-700'
+                    } text-white`}
+                  >
+                    {(trip && trip.status && trip.status !== 'open') ? 'Not Open' : 'Check-in'}
+                  </button>
+                </div>
+              )}
 
               {!isConnected && (
                 <p className="text-center text-gray-600 mt-4 text-sm">
