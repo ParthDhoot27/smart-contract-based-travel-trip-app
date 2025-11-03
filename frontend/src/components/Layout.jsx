@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
 
 const Layout = ({ children }) => {
-  const { isConnected, walletAddress, connectWallet, disconnectWallet } = useWallet()
+  const { isConnected, walletAddress, userProfile, disconnectWallet } = useWallet()
   const navigate = useNavigate()
 
   return (
@@ -30,8 +30,8 @@ const Layout = ({ children }) => {
             <div className="flex items-center space-x-4">
               {isConnected ? (
                 <div className="flex items-center space-x-3">
-                  <span className="text-sm text-gray-600">
-                    {walletAddress?.substring(0, 6)}...{walletAddress?.substring(38)}
+                  <span className="text-sm text-gray-700 font-medium">
+                    {userProfile?.username || `${walletAddress?.substring(0, 6)}...${walletAddress?.substring(38)}`}
                   </span>
                   <button
                     onClick={disconnectWallet}

@@ -1,4 +1,7 @@
 import mongoose from 'mongoose'
+import { customAlphabet } from 'nanoid'
+
+const nano = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 16)
 
 const userSchema = new mongoose.Schema(
   {
@@ -28,6 +31,8 @@ const tripSchema = new mongoose.Schema(
     code: { type: String, unique: true, sparse: true },
     organizer: { type: String, required: true },
     organizerName: String,
+    minFund: { type: Number, default: 0 },
+    status: { type: String, enum: ['open', 'closed', 'confirmed', 'canceled'], default: 'open', index: true },
   },
   { timestamps: true }
 )
@@ -36,6 +41,7 @@ const participantSchema = new mongoose.Schema(
   {
     tripId: { type: String, required: true, index: true },
     walletAddress: { type: String, required: true },
+    name: { type: String },
   },
   { timestamps: { createdAt: 'joinedAt', updatedAt: false } }
 )
@@ -125,6 +131,8 @@ const mapTrip = (t, participants) => ({
   code: t.code || null,
   organizer: t.organizer,
   organizerName: t.organizerName || null,
+  minFund: typeof t.minFund === 'number' ? t.minFund : 0,
+  status: t.status || 'open',
   participants: participants ?? undefined,
 })
 
@@ -179,7 +187,7 @@ export const trips = {
     return mapTrip(t, participants)
   },
   async create(doc) {
-    const tripId = doc.id || String(Date.now())
+    const tripId = doc.id || nano()
     try {
       // Prevent duplicates by same organizer+title+date
       const existing = await Trip.findOne({ organizer: doc.organizer, title: doc.title, date: doc.date }).lean()
@@ -200,6 +208,8 @@ export const trips = {
         code: doc.code || null,
         organizer: doc.organizer,
         organizerName: doc.organizerName || null,
+        minFund: Number(doc.minFund || 0),
+        status: 'open',
       })
       // add to organizer's createdTrips
       await User.updateOne({ walletAddress: doc.organizer }, { $addToSet: { createdTrips: tripId } })
@@ -213,11 +223,16 @@ export const trips = {
     }
     return mapTrip({ ...doc, id: tripId }, 0)
   },
-  async checkin(id, walletAddress) {
+  async checkin(id, walletAddress, name) {
     const t = await Trip.findOne({ id }).lean()
     if (!t) return { notFound: true }
+    if (t.status && t.status !== 'open') {
+      const err = new Error('TRIP_NOT_OPEN')
+      err.code = 'TRIP_NOT_OPEN'
+      throw err
+    }
     try {
-      await Participant.create({ tripId: id, walletAddress })
+      await Participant.create({ tripId: id, walletAddress, name: name || null })
       await User.updateOne({ walletAddress }, { $addToSet: { joinedTrips: id } })
     } catch (e) {
       if (e && e.code === 11000) {
@@ -230,7 +245,7 @@ export const trips = {
   },
   async listParticipants(id) {
     const parts = await Participant.find({ tripId: id }).sort({ joinedAt: 1 }).lean()
-    return parts.map(p => ({ walletAddress: p.walletAddress }))
+    return parts.map(p => ({ walletAddress: p.walletAddress, name: p.name || null }))
   },
   async delete(id) {
     // Remove trip, its participants, and references from users
@@ -244,6 +259,20 @@ export const trips = {
     // remove from any organizer createdTrips
     await User.updateMany({ createdTrips: id }, { $pull: { createdTrips: id } })
     return { deleted: true }
+  },
+  async confirm(id, walletAddress) {
+    const t = await Trip.findOne({ id }).lean()
+    if (!t) return { notFound: true }
+    if (t.organizer !== walletAddress) return { forbidden: true }
+    await Trip.updateOne({ id }, { $set: { status: 'closed' } })
+    return { ok: true, status: 'closed' }
+  },
+  async cancel(id, walletAddress) {
+    const t = await Trip.findOne({ id }).lean()
+    if (!t) return { notFound: true }
+    if (t.organizer !== walletAddress) return { forbidden: true }
+    await Trip.updateOne({ id }, { $set: { status: 'canceled' } })
+    return { ok: true, status: 'canceled' }
   },
 }
 

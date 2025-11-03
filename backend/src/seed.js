@@ -7,7 +7,7 @@ export async function seedDemo(store) {
     // Ensure demo user exists and locked
     await store.users.register({ walletAddress: demoWallet, fullName: demoName, age: demoAge })
 
-    // Create demo universal trip for $2 if not exists
+    // Create demo universal trip for $2 if not exists (no demo participants)
     const demoTripId = 'demo-trip-2-usd'
     const existing = await store.trips.getById(demoTripId)
     if (!existing) {
@@ -25,19 +25,6 @@ export async function seedDemo(store) {
         organizer: demoWallet,
         organizerName: demoName,
       })
-      // Add 7 participants
-      const participants = [
-        '0xDEMO000000000000000000000000000000000101',
-        '0xDEMO000000000000000000000000000000000102',
-        '0xDEMO000000000000000000000000000000000103',
-        '0xDEMO000000000000000000000000000000000104',
-        '0xDEMO000000000000000000000000000000000105',
-        '0xDEMO000000000000000000000000000000000106',
-        '0xDEMO000000000000000000000000000000000107',
-      ]
-      for (const w of participants) {
-        await store.trips.checkin(demoTripId, w)
-      }
     }
   } catch (e) {
     // Non-fatal seeding errors

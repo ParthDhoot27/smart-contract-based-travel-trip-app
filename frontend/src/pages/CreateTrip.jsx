@@ -4,7 +4,7 @@ import { useWallet } from '../context/WalletContext'
 import { API_BASE } from '../lib/api'
 
 const CreateTrip = () => {
-  const { isConnected, walletAddress, addCreatedTrip } = useWallet()
+  const { isConnected, walletAddress, userProfile, addCreatedTrip } = useWallet()
   const navigate = useNavigate()
   const [showModal, setShowModal] = useState(false)
   const [showCodeModal, setShowCodeModal] = useState(false)
@@ -23,6 +23,7 @@ const CreateTrip = () => {
     codeOption: 'auto', // 'auto' or 'custom'
     hasAgeRestriction: false,
     ageLimit: null,
+    minFund: '',
   })
 
   const handleChange = (e) => {
@@ -87,7 +88,8 @@ const CreateTrip = () => {
         codeOption: formData.codeOption,
         customCode: formData.codeOption === 'custom' ? formData.customCode : undefined,
         organizer: walletAddress,
-        organizerName: walletAddress.substring(0, 8) + '...',
+        organizerName: userProfile?.username || (walletAddress.substring(0, 8) + '...'),
+        minFund: formData.minFund ? Number(formData.minFund) : 0,
       }
       const resp = await fetch(`${API_BASE}/api/trips`, {
         method: 'POST',
@@ -251,6 +253,25 @@ const CreateTrip = () => {
             />
           </div>
 
+          {/* Minimum Fund Required */}
+          <div>
+            <label htmlFor="minFund" className="block text-sm font-medium text-gray-700 mb-2">
+              Minimum Fund to Confirm Trip (USD)
+            </label>
+            <input
+              type="number"
+              id="minFund"
+              name="minFund"
+              min="0"
+              step="0.01"
+              value={formData.minFund}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              placeholder="e.g., 1000.00"
+            />
+            <p className="text-xs text-gray-500 mt-1">Trip can be confirmed when collected funds reach this amount; otherwise organizer can cancel and refund.</p>
+          </div>
+
           {/* Deadline */}
           <div>
             <label htmlFor="deadline" className="block text-sm font-medium text-gray-700 mb-2">
@@ -401,6 +422,7 @@ const CreateTrip = () => {
               <p><strong>Destination:</strong> {formData.destination}</p>
               <p><strong>Date:</strong> {new Date(formData.date).toLocaleDateString()}</p>
               <p><strong>Amount:</strong> ${formData.amount}</p>
+              {formData.minFund && <p><strong>Minimum Fund:</strong> ${formData.minFund}</p>}
               <p><strong>Payment Last Date:</strong> {new Date(formData.deadline).toLocaleDateString()}</p>
               <p><strong>End Date:</strong> {new Date(formData.endDate).toLocaleDateString()}</p>
               <p><strong>Type:</strong> {formData.type === 'universal' ? 'Public' : 'Private'}</p>

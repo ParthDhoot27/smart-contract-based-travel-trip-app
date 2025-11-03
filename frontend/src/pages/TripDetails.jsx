@@ -6,11 +6,13 @@ import { API_BASE } from '../lib/api'
 const TripDetails = () => {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { isConnected, walletAddress, addJoinedTrip } = useWallet()
+  const { isConnected, walletAddress, addJoinedTrip, userProfile } = useWallet()
   const [trip, setTrip] = useState(null)
   const [participants, setParticipants] = useState([])
   const [hasCheckedIn, setHasCheckedIn] = useState(false)
   const [error, setError] = useState('')
+  const totalCollected = (trip ? (trip.participants || 0) * Number(trip.amount || 0) : 0)
+  const meetsMinFund = trip ? Number(trip.minFund || 0) > 0 && totalCollected >= Number(trip.minFund || 0) : false
 
   useEffect(() => {
     const load = async () => {
@@ -23,7 +25,7 @@ const TripDetails = () => {
         const presp = await fetch(`${API_BASE}/api/trips/${id}/participants`)
         const pdata = await presp.json()
         const plist = Array.isArray(pdata) ? pdata : []
-        setParticipants(plist.map(p => ({ name: p.walletAddress.substring(0, 8) + '...', checkedIn: true })))
+        setParticipants(plist.map(p => ({ name: p.name || (p.walletAddress.substring(0, 8) + '...'), checkedIn: true })))
       } catch (e) {
         setError('Failed to load trip')
       }
@@ -35,6 +37,10 @@ const TripDetails = () => {
     if (!isConnected) {
       alert('Please connect your wallet to check-in')
       navigate('/login')
+      return
+    }
+    if (trip && trip.status && trip.status !== 'open') {
+      alert('Trip is not open for check-in')
       return
     }
     try {
@@ -81,12 +87,12 @@ const TripDetails = () => {
       const resp = await fetch(`${API_BASE}/api/trips/${id}/checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress, txHash: tx?.hash || null, amountOctas: String(octas), status: 'success', network: 'unknown' })
+        body: JSON.stringify({ walletAddress, name: userProfile?.username || null, txHash: tx?.hash || null, amountOctas: String(octas), status: 'success', network: 'unknown' })
       })
       const data = await resp.json()
       if (!resp.ok) throw new Error(data?.error || 'Check-in failed')
       setHasCheckedIn(true)
-      const newParticipant = { name: walletAddress.substring(0, 8) + '...', checkedIn: true }
+      const newParticipant = { name: userProfile?.username || (walletAddress.substring(0, 8) + '...'), checkedIn: true }
       setParticipants([...participants, newParticipant])
       if (trip) {
         addJoinedTrip({ ...trip, participants: (trip.participants || 0) + 1 })
@@ -102,7 +108,7 @@ const TripDetails = () => {
           await fetch(`${API_BASE}/api/trips/${id}/checkin`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ walletAddress, txHash: null, amountOctas: String(octas), status: 'failed', network: 'unknown' })
+            body: JSON.stringify({ walletAddress, name: userProfile?.username || null, txHash: null, amountOctas: String(octas), status: 'failed', network: 'unknown' })
           })
         }
       } catch {}
@@ -111,6 +117,38 @@ const TripDetails = () => {
   }
 
   const isOrganizer = trip && walletAddress === trip.organizer
+
+  const handleConfirm = async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/api/trips/${id}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress })
+      })
+      const data = await resp.json()
+      if (!resp.ok) throw new Error(data?.error || 'Failed to confirm')
+      setTrip({ ...trip, status: 'closed' })
+      alert('Trip confirmed and registrations closed')
+    } catch (e) {
+      alert(e?.message || 'Failed to confirm trip')
+    }
+  }
+
+  const handleCancel = async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/api/trips/${id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress })
+      })
+      const data = await resp.json()
+      if (!resp.ok) throw new Error(data?.error || 'Failed to cancel')
+      setTrip({ ...trip, status: 'canceled' })
+      alert('Trip canceled; refunds will be processed')
+    } catch (e) {
+      alert(e?.message || 'Failed to cancel trip')
+    }
+  }
 
   if (!trip) {
     return (
@@ -145,6 +183,9 @@ const TripDetails = () => {
                 👑 Organizer
               </span>
             )}
+            <span className="inline-block px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-800">
+              Status: {trip.status || 'open'}
+            </span>
           </div>
 
           {/* Trip Details */}
@@ -195,6 +236,16 @@ const TripDetails = () => {
 
             <div>
               <div className="flex items-center mb-2">
+                <span className="text-2xl mr-3">🎯</span>
+                <div>
+                  <div className="text-sm text-gray-600">Minimum Fund to Confirm</div>
+                  <div className="text-lg font-semibold text-gray-900">${trip.minFund || 0}</div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center mb-2">
                 <span className="text-2xl mr-3">⏰</span>
                 <div>
                   <div className="text-sm text-gray-600">Payment Last Date</div>
@@ -227,6 +278,17 @@ const TripDetails = () => {
             <h2 className="text-xl font-bold text-gray-900 mb-4">
               Currently Checked-in People: {participants.length}
             </h2>
+            <div className="mb-4">
+              <div className="w-full bg-white rounded h-3 border">
+                <div
+                  className={`h-3 rounded ${meetsMinFund ? 'bg-green-500' : 'bg-primary-500'}`}
+                  style={{ width: `${Math.min(100, trip && trip.minFund > 0 ? Math.floor((totalCollected / Math.max(1, trip.minFund)) * 100) : 0)}%` }}
+                />
+              </div>
+              <div className="text-xs text-gray-600 mt-1">
+                Collected: ${totalCollected.toFixed(2)} {trip?.minFund ? `(Target: $${Number(trip.minFund).toFixed(2)})` : ''}
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2">
               {participants.map((participant, index) => (
                 <div
@@ -255,14 +317,14 @@ const TripDetails = () => {
               <div className="flex space-x-4">
                 <button
                   onClick={handleCheckIn}
-                  disabled={hasCheckedIn}
+                  disabled={hasCheckedIn || (trip && trip.status && trip.status !== 'open')}
                   className={`flex-1 font-semibold py-4 px-6 rounded-lg transition ${
-                    hasCheckedIn
+                    hasCheckedIn || (trip && trip.status && trip.status !== 'open')
                       ? 'bg-gray-400 cursor-not-allowed'
                       : 'bg-primary-600 hover:bg-primary-700'
                   } text-white`}
                 >
-                  {hasCheckedIn ? '✓ Already Checked In' : 'Check-in'}
+                  {hasCheckedIn ? '✓ Already Checked In' : (trip && trip.status && trip.status !== 'open') ? 'Not Open' : 'Check-in'}
                 </button>
               </div>
 
@@ -275,10 +337,29 @@ const TripDetails = () => {
           )}
 
           {isOrganizer && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
-              <div className="text-3xl mb-2">👑</div>
-              <p className="text-green-800 font-semibold">You are the organizer of this trip</p>
-              <p className="text-green-700 text-sm mt-1">Manage your trip participants and details</p>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <div className="text-green-800 font-semibold">Organizer Controls</div>
+                  <div className="text-green-700 text-sm mt-1">Confirm when minimum funds are reached or cancel to refund participants.</div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleConfirm}
+                    disabled={trip && trip.status !== 'open'}
+                    className={`px-4 py-2 rounded-lg text-white font-semibold ${trip && trip.status !== 'open' ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+                  >
+                    Confirm Trip
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    disabled={trip && trip.status !== 'open'}
+                    className={`px-4 py-2 rounded-lg text-white font-semibold ${trip && trip.status !== 'open' ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
+                  >
+                    Cancel Trip
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

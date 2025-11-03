@@ -87,6 +87,7 @@ export default function createTripsRouter(store) {
         organizer,
         organizerName,
         id,
+        minFund,
       } = req.body
 
       if (!title || !description || !destination || !date || !endDate || !amount || !deadline || !type || !organizer) {
@@ -116,6 +117,7 @@ export default function createTripsRouter(store) {
         code,
         organizer,
         organizerName,
+        minFund,
       })
       res.status(201).json(created)
     } catch (e) {
@@ -129,11 +131,12 @@ export default function createTripsRouter(store) {
   router.post('/:id/checkin', async (req, res, next) => {
     try {
       const { id } = req.params
-      const { walletAddress, txHash, amountOctas, status, network } = req.body
+      const { walletAddress, name, txHash, amountOctas, status, network } = req.body
       if (!walletAddress) return res.status(400).json({ error: 'walletAddress required' })
 
-      const result = await store.trips.checkin(id, walletAddress)
+      const result = await store.trips.checkin(id, walletAddress, name)
       if (result.notFound) return res.status(404).json({ error: 'Trip not found' })
+      if (result.code === 'TRIP_NOT_OPEN') return res.status(409).json({ error: 'Trip is not open for check-in' })
       if (result.already) return res.status(409).json({ error: 'Already checked in' })
       // Optional: log transaction if provided
       if (store.transactions && (txHash || status)) {
@@ -145,6 +148,36 @@ export default function createTripsRouter(store) {
         }
       }
       return res.json({ success: true, participants: result.participants })
+    } catch (e) {
+      next(e)
+    }
+  })
+
+  // Confirm a trip (organizer closes registrations)
+  router.post('/:id/confirm', async (req, res, next) => {
+    try {
+      const { id } = req.params
+      const { walletAddress } = req.body || {}
+      if (!walletAddress) return res.status(400).json({ error: 'walletAddress required' })
+      const out = await store.trips.confirm(id, walletAddress)
+      if (out.notFound) return res.status(404).json({ error: 'Trip not found' })
+      if (out.forbidden) return res.status(403).json({ error: 'Only organizer can confirm this trip' })
+      return res.json(out)
+    } catch (e) {
+      next(e)
+    }
+  })
+
+  // Cancel a trip (organizer cancels; refunds handled by smart contract in production)
+  router.post('/:id/cancel', async (req, res, next) => {
+    try {
+      const { id } = req.params
+      const { walletAddress } = req.body || {}
+      if (!walletAddress) return res.status(400).json({ error: 'walletAddress required' })
+      const out = await store.trips.cancel(id, walletAddress)
+      if (out.notFound) return res.status(404).json({ error: 'Trip not found' })
+      if (out.forbidden) return res.status(403).json({ error: 'Only organizer can cancel this trip' })
+      return res.json(out)
     } catch (e) {
       next(e)
     }
