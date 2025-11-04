@@ -25,6 +25,9 @@ const Layout = ({ children }) => {
                 <Link to="/join" className="text-gray-700 hover:text-primary-600 px-3 py-2 rounded-md text-sm font-medium">
                   Join
                 </Link>
+                <Link to="/inbox" className="text-gray-700 hover:text-primary-600 px-3 py-2 rounded-md text-sm font-medium">
+                  Inbox
+                </Link>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -54,7 +57,7 @@ const Layout = ({ children }) => {
       </nav>
 
       {/* Main Content */}
-      <main className="flex-grow">
+      <main className="flex-grow text-gray-900">
         {children}
       </main>
 

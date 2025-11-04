@@ -88,6 +88,9 @@ export default function createTripsRouter(store) {
         organizerName,
         id,
         minFund,
+        whatsappLink,
+        discordLink,
+        initialDepositOctas,
       } = req.body
 
       if (!title || !description || !destination || !date || !endDate || !amount || !deadline || !type || !organizer) {
@@ -104,21 +107,49 @@ export default function createTripsRouter(store) {
         }
       }
 
-      const created = await store.trips.create({
-        id,
-        title,
-        description,
-        destination,
-        date,
-        endDate,
-        amount,
-        deadline,
-        type,
-        code,
-        organizer,
-        organizerName,
-        minFund,
-      })
+      // Validate initial deposit for universal trips (>= 2x per-member cost)
+      if (type === 'universal') {
+        const dep = BigInt(String(initialDepositOctas || '0'))
+        const amountOctas = BigInt(Math.floor(Number(amount) * 1e8))
+        if (dep < amountOctas * BigInt(2)) {
+          return res.status(400).json({ error: 'Initial deposit must be at least 2x per-member cost (in APT)' })
+        }
+      }
+
+      // Attempt create, retry on duplicate code if auto-generated
+      let created
+      let attempts = 0
+      while (true) {
+        try {
+          created = await store.trips.create({
+            id,
+            title,
+            description,
+            destination,
+            date,
+            endDate,
+            amount,
+            deadline,
+            type,
+            code,
+            organizer,
+            organizerName,
+            minFund,
+            whatsappLink,
+            discordLink,
+            initialDepositOctas: String(initialDepositOctas || '0'),
+            escrowOctas: String(initialDepositOctas || '0'),
+          })
+          break
+        } catch (e) {
+          if (e && e.code === 'DUPLICATE_CODE' && type === 'private' && codeOption !== 'custom' && attempts < 3) {
+            code = nano()
+            attempts++
+            continue
+          }
+          throw e
+        }
+      }
       res.status(201).json(created)
     } catch (e) {
       if (e && (e.code === 'DUPLICATE_CODE')) {
@@ -131,10 +162,10 @@ export default function createTripsRouter(store) {
   router.post('/:id/checkin', async (req, res, next) => {
     try {
       const { id } = req.params
-      const { walletAddress, name, txHash, amountOctas, status, network } = req.body
+      const { walletAddress, name, age, txHash, amountOctas, status, network } = req.body
       if (!walletAddress) return res.status(400).json({ error: 'walletAddress required' })
 
-      const result = await store.trips.checkin(id, walletAddress, name)
+      const result = await store.trips.checkin(id, walletAddress, name, Number.isInteger(age) ? age : null, amountOctas, status)
       if (result.notFound) return res.status(404).json({ error: 'Trip not found' })
       if (result.code === 'TRIP_NOT_OPEN') return res.status(409).json({ error: 'Trip is not open for check-in' })
       if (result.already) return res.status(409).json({ error: 'Already checked in' })
@@ -178,6 +209,45 @@ export default function createTripsRouter(store) {
       if (out.notFound) return res.status(404).json({ error: 'Trip not found' })
       if (out.forbidden) return res.status(403).json({ error: 'Only organizer can cancel this trip' })
       return res.json(out)
+    } catch (e) {
+      next(e)
+    }
+  })
+
+  // Organizer remove a participant with a reason (not a live chat; message sent to participant inbox)
+  router.post('/:id/remove-participant', async (req, res, next) => {
+    try {
+      const { id } = req.params
+      const { organizer, participantWallet, reason } = req.body || {}
+      if (!organizer || !participantWallet) return res.status(400).json({ error: 'organizer and participantWallet are required' })
+      if (!store.trips || !store.trips.removeParticipant) return res.status(500).json({ error: 'Trips store not supported' })
+      const out = await store.trips.removeParticipant(id, organizer, participantWallet, reason)
+      if (out.notFound) return res.status(404).json({ error: 'Trip or participant not found' })
+      if (out.forbidden) return res.status(403).json({ error: 'Only organizer can remove participants' })
+      return res.json({ ok: true })
+    } catch (e) {
+      next(e)
+    }
+  })
+
+  // Total escrow across all trips
+  router.get('/funds/total', async (_req, res, next) => {
+    try {
+      if (!store.transactions || !store.transactions.totalEscrow) return res.json({ octas: '0' })
+      const total = await store.transactions.totalEscrow()
+      return res.json(total)
+    } catch (e) {
+      next(e)
+    }
+  })
+
+  // Escrow for a specific trip
+  router.get('/:id/funds', async (req, res, next) => {
+    try {
+      const { id } = req.params
+      const t = await store.trips.getById(id)
+      if (!t) return res.status(404).json({ error: 'Trip not found' })
+      return res.json({ octas: t.escrowOctas || '0' })
     } catch (e) {
       next(e)
     }

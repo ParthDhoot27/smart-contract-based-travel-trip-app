@@ -24,6 +24,9 @@ const CreateTrip = () => {
     hasAgeRestriction: false,
     ageLimit: null,
     minFund: '',
+    whatsappLink: '',
+    discordLink: '',
+    initialDepositApt: '',
   })
 
   const handleChange = (e) => {
@@ -72,6 +75,14 @@ const CreateTrip = () => {
     if (creating) return
     setCreating(true)
     try {
+      // Validate mandatory initial deposit for universal trips: >= 2x per-member cost
+      if (formData.type === 'universal') {
+        const amountNum = Number(formData.amount)
+        const depositNum = Number(formData.initialDepositApt)
+        if (!depositNum || depositNum < amountNum * 2) {
+          throw new Error('Initial deposit must be at least 2x the per-member cost (APT).')
+        }
+      }
       const code = formData.type === 'private' 
         ? (formData.codeOption === 'custom' ? formData.customCode : generateCode())
         : null
@@ -90,6 +101,9 @@ const CreateTrip = () => {
         organizer: walletAddress,
         organizerName: userProfile?.username || (walletAddress.substring(0, 8) + '...'),
         minFund: formData.minFund ? Number(formData.minFund) : 0,
+        whatsappLink: formData.whatsappLink || undefined,
+        discordLink: formData.discordLink || undefined,
+        initialDepositOctas: formData.initialDepositApt ? String(Math.floor(Number(formData.initialDepositApt) * 1e8)) : '0',
       }
       const resp = await fetch(`${API_BASE}/api/trips`, {
         method: 'POST',
@@ -232,6 +246,38 @@ const CreateTrip = () => {
             {formData.endDate && formData.date && new Date(formData.endDate) < new Date(formData.date) && (
               <p className="text-red-600 text-sm mt-1">End date must be after start date</p>
             )}
+
+          {/* Social Links */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="whatsappLink" className="block text-sm font-medium text-gray-700 mb-2">
+                WhatsApp Group Link
+              </label>
+              <input
+                type="url"
+                id="whatsappLink"
+                name="whatsappLink"
+                value={formData.whatsappLink}
+                onChange={handleChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="https://chat.whatsapp.com/..."
+              />
+            </div>
+            <div>
+              <label htmlFor="discordLink" className="block text-sm font-medium text-gray-700 mb-2">
+                Discord Server Invite
+              </label>
+              <input
+                type="url"
+                id="discordLink"
+                name="discordLink"
+                value={formData.discordLink}
+                onChange={handleChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="https://discord.gg/..."
+              />
+            </div>
+          </div>
           </div>
 
           {/* Amount */}
@@ -271,6 +317,29 @@ const CreateTrip = () => {
             />
             <p className="text-xs text-gray-500 mt-1">Trip can be confirmed when collected funds reach this amount; otherwise organizer can cancel and refund.</p>
           </div>
+
+          {/* Initial Deposit (APT) for Universal Trips */}
+          {formData.type === 'universal' && (
+            <div>
+              <label htmlFor="initialDepositApt" className="block text-sm font-medium text-gray-700 mb-2">
+                Initial Deposit (APT) *
+              </label>
+              <input
+                type="number"
+                id="initialDepositApt"
+                name="initialDepositApt"
+                min="0"
+                step="0.00000001"
+                value={formData.initialDepositApt}
+                onChange={handleChange}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="e.g., 2.0"
+              />
+              <p className="text-xs text-gray-600 mt-1">This deposit must be ≥ 2× the minimum per-member cost. It will be held in escrow and returned to you upon trip confirmation.</p>
+              <p className="text-xs text-gray-500 mt-1">Note: initial deposits for universal trips are mandatory to make the trip authentic and users assured.</p>
+            </div>
+          )}
 
           {/* Deadline */}
           <div>
@@ -389,6 +458,9 @@ const CreateTrip = () => {
               <span className="text-red-600 mr-3">⚠️</span>
               <div className="text-sm text-red-800">
                 <strong>Important:</strong> Trip information cannot be changed after creation due to security and transparency reasons. Please review all details carefully before submitting.
+                <div className="mt-2">
+                  <strong>Cancellation Policy:</strong> If you cancel the trip after funds have met the minimum threshold, <strong>20% of total funds raised will be charged</strong> as a penalty and not returned. If the minimum funds are not met, you can cancel without this penalty and refunds will be processed.
+                </div>
               </div>
             </div>
           </div>

@@ -13,6 +13,9 @@ const TripDetails = () => {
   const [error, setError] = useState('')
   const totalCollected = (trip ? (trip.participants || 0) * Number(trip.amount || 0) : 0)
   const meetsMinFund = trip ? Number(trip.minFund || 0) > 0 && totalCollected >= Number(trip.minFund || 0) : false
+  const [escrowOctas, setEscrowOctas] = useState('0')
+  const [showAllParticipants, setShowAllParticipants] = useState(false)
+  const ESCROW_ADDR = (import.meta?.env?.VITE_APTOS_ESCROW_ADDRESS || '').trim()
 
   useEffect(() => {
     const load = async () => {
@@ -25,10 +28,15 @@ const TripDetails = () => {
         const presp = await fetch(`${API_BASE}/api/trips/${id}/participants`)
         const pdata = await presp.json()
         const plist = Array.isArray(pdata) ? pdata : []
-        setParticipants(plist.map(p => ({ walletAddress: p.walletAddress, name: p.name || (p.walletAddress.substring(0, 8) + '...'), checkedIn: true })))
+        setParticipants(plist.map(p => ({ walletAddress: p.walletAddress, name: p.name || (p.walletAddress.substring(0, 8) + '...'), age: Number.isInteger(p.age) ? p.age : null, checkedIn: true })))
         if (plist.find(p => p.walletAddress?.toLowerCase() === (walletAddress || '').toLowerCase())) {
           setHasCheckedIn(true)
         }
+        try {
+          const f = await fetch(`${API_BASE}/api/trips/${id}/funds`)
+          const fd = await f.json()
+          if (f.ok) setEscrowOctas(String(fd.octas || '0'))
+        } catch (_) {}
       } catch (e) {
         setError('Failed to load trip')
       }
@@ -54,29 +62,21 @@ const TripDetails = () => {
         return
       }
 
-      // Build on-chain payment: transfer APT to organizer
-      let recipient = trip?.organizer
-      if (!recipient) {
-        alert('Organizer address not available for payment.')
-        return
-      }
-      // Normalize and validate Aptos address
-      const strip0x = String(recipient).startsWith('0x') ? String(recipient).slice(2) : String(recipient)
-      const isHex = /^[0-9a-fA-F]+$/.test(strip0x)
-      if (!isHex || strip0x.length === 0) {
-        alert('Organizer address is not a valid hex Aptos address. Please contact the organizer or try another trip.')
-        return
-      }
-      const evenHex = strip0x.length % 2 === 1 ? '0' + strip0x : strip0x
-      recipient = '0x' + evenHex.toLowerCase()
-      const amountApt = Number(trip?.amount) || 0
-      // Convert APT to octas (1 APT = 1e8 octas)
-      const octas = Math.floor(amountApt * 1e8)
-      if (octas <= 0) {
-        alert('Invalid trip amount for on-chain payment.')
-        return
-      }
+      // Enforce devnet/testnet only
+      try {
+        const net = await (w.aptos.network ? w.aptos.network() : Promise.resolve(undefined))
+        const n = (typeof net === 'string' ? net : net?.name || '').toLowerCase()
+        if (n.includes('mainnet')) {
+          alert('Please switch Petra to Testnet or Devnet. Mainnet is not supported.')
+          return
+        }
+      } catch (_) {}
 
+      // Send to escrow wallet if configured
+      const recipient = ESCROW_ADDR || trip.organizer
+      const amountApt = Number(trip?.amount) || 0
+      const octas = Math.floor(amountApt * 1e8)
+      // Convert APT to octas (1 APT = 1e8 octas)
       const payload = {
         type: 'entry_function_payload',
         function: '0x1::coin::transfer',
@@ -90,7 +90,7 @@ const TripDetails = () => {
       const resp = await fetch(`${API_BASE}/api/trips/${id}/checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress, name: userProfile?.username || null, txHash: tx?.hash || null, amountOctas: String(octas), status: 'success', network: 'unknown' })
+        body: JSON.stringify({ walletAddress, name: userProfile?.username || null, age: Number.isInteger(userProfile?.age) ? userProfile.age : null, txHash: tx?.hash || null, amountOctas: String(octas), status: 'success', network: 'unknown' })
       })
       const data = await resp.json()
       if (!resp.ok) {
@@ -125,7 +125,7 @@ const TripDetails = () => {
           await fetch(`${API_BASE}/api/trips/${id}/checkin`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ walletAddress, name: userProfile?.username || null, txHash: null, amountOctas: String(octas), status: 'failed', network: 'unknown' })
+            body: JSON.stringify({ walletAddress, name: userProfile?.username || null, age: Number.isInteger(userProfile?.age) ? userProfile.age : null, txHash: null, amountOctas: String(octas), status: 'failed', network: 'unknown' })
           })
         }
       } catch {}
@@ -292,6 +292,7 @@ const TripDetails = () => {
 
           {/* Participants */}
           <div className="mb-8 p-6 bg-primary-50 rounded-lg">
+            <div className="text-xs text-gray-600 mb-2">Network: Testnet/Devnet only. Funds are sent to escrow wallet.</div>
             <h2 className="text-xl font-bold text-gray-900 mb-4">
               Currently Checked-in People: {participants.length}
             </h2>
@@ -305,17 +306,25 @@ const TripDetails = () => {
               <div className="text-xs text-gray-600 mt-1">
                 Collected: ${totalCollected.toFixed(2)} {trip?.minFund ? `(Target: $${Number(trip.minFund).toFixed(2)})` : ''}
               </div>
+              <div className="text-xs text-gray-600 mt-1">
+                Escrowed on-chain (APT): {(Number(escrowOctas) / 1e8).toFixed(2)}
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {participants.map((participant, index) => (
+              {(showAllParticipants ? participants : participants.slice(0, 6)).map((participant, index) => (
                 <div
                   key={index}
                   className="bg-white px-4 py-2 rounded-full shadow text-sm font-medium text-gray-900 border-2 border-primary-200"
                 >
-                  👤 {participant.name}
+                  👤 {participant.name}{(walletAddress === trip.organizer || trip.type === 'private') && participant.age ? ` • ${participant.age}y` : ''}
                 </div>
               ))}
             </div>
+            {participants.length > 6 && (
+              <button onClick={() => setShowAllParticipants(!showAllParticipants)} className="mt-3 text-primary-700 text-sm font-medium">
+                {showAllParticipants ? 'Show less' : 'Show more'}
+              </button>
+            )}
           </div>
 
           {/* Participant actions */}

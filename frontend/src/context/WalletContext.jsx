@@ -122,7 +122,7 @@ export const WalletProvider = ({ children }) => {
         const resp = await fetch(`${API_BASE}/api/users/${walletAddress}`)
         if (resp.ok) {
           const u = await resp.json()
-          setProfile({ username: u?.username || u?.fullName || '', profileImage: u?.profileImage || null })
+          setProfile({ username: u?.username || u?.fullName || '', profileImage: u?.profileImage || null, age: u?.age ?? null })
         }
       } catch (_) {}
     }

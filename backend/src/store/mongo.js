@@ -32,6 +32,10 @@ const tripSchema = new mongoose.Schema(
     organizer: { type: String, required: true },
     organizerName: String,
     minFund: { type: Number, default: 0 },
+    whatsappLink: { type: String },
+    discordLink: { type: String },
+    initialDepositOctas: { type: String, default: '0' },
+    escrowOctas: { type: String, default: '0' },
     status: { type: String, enum: ['open', 'closed', 'confirmed', 'canceled'], default: 'open', index: true },
   },
   { timestamps: true }
@@ -42,6 +46,7 @@ const participantSchema = new mongoose.Schema(
     tripId: { type: String, required: true, index: true },
     walletAddress: { type: String, required: true },
     name: { type: String },
+    age: { type: Number },
   },
   { timestamps: { createdAt: 'joinedAt', updatedAt: false } }
 )
@@ -53,9 +58,22 @@ const transactionSchema = new mongoose.Schema(
     from: { type: String, required: true },
     to: { type: String, required: true },
     amountOctas: { type: String, required: true },
-    status: { type: String, enum: ['submitted', 'success', 'failed'], required: true },
+    status: { type: String, enum: ['success', 'failed', 'pending'], default: 'success' },
     hash: { type: String },
     network: { type: String, default: 'unknown' },
+  },
+  { timestamps: true }
+)
+
+const messageSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    from: { type: String, required: true },
+    to: { type: String, required: true },
+    type: { type: String, enum: ['bug', 'organizer', 'system'], default: 'organizer' },
+    subject: { type: String },
+    body: { type: String, required: true },
+    read: { type: Boolean, default: false },
   },
   { timestamps: true }
 )
@@ -64,6 +82,7 @@ const User = mongoose.models.User || mongoose.model('User', userSchema)
 const Trip = mongoose.models.Trip || mongoose.model('Trip', tripSchema)
 const Participant = mongoose.models.Participant || mongoose.model('Participant', participantSchema)
 const Transaction = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema)
+const Message = mongoose.models.Message || mongoose.model('Message', messageSchema)
 
 export async function connectMongo(uri) {
   if (!uri) return null
@@ -132,6 +151,10 @@ const mapTrip = (t, participants) => ({
   organizer: t.organizer,
   organizerName: t.organizerName || null,
   minFund: typeof t.minFund === 'number' ? t.minFund : 0,
+  whatsappLink: t.whatsappLink || null,
+  discordLink: t.discordLink || null,
+  initialDepositOctas: t.initialDepositOctas || '0',
+  escrowOctas: t.escrowOctas || '0',
   status: t.status || 'open',
   participants: participants ?? undefined,
 })
@@ -203,6 +226,10 @@ export const trips = {
         organizer: doc.organizer,
         organizerName: doc.organizerName || null,
         minFund: Number(doc.minFund || 0),
+        whatsappLink: doc.whatsappLink || null,
+        discordLink: doc.discordLink || null,
+        initialDepositOctas: String(doc.initialDepositOctas || '0'),
+        escrowOctas: String(doc.escrowOctas || '0'),
         status: 'open',
       })
       // add to organizer's createdTrips
@@ -217,7 +244,7 @@ export const trips = {
     }
     return mapTrip({ ...doc, id: tripId }, 0)
   },
-  async checkin(id, walletAddress, name) {
+  async checkin(id, walletAddress, name, age, amountOctas, status) {
     const t = await Trip.findOne({ id }).lean()
     if (!t) return { notFound: true }
     if (t.status && t.status !== 'open') {
@@ -226,7 +253,7 @@ export const trips = {
       throw err
     }
     try {
-      await Participant.create({ tripId: id, walletAddress, name: name || null })
+      await Participant.create({ tripId: id, walletAddress, name: name || null, age: Number.isInteger(age) ? age : null })
       await User.updateOne({ walletAddress }, { $addToSet: { joinedTrips: id } })
     } catch (e) {
       if (e && e.code === 11000) {
@@ -234,12 +261,36 @@ export const trips = {
       }
       throw e
     }
+    // increment escrow only for successful payments
+    try {
+      if (String(status).toLowerCase() === 'success' && amountOctas) {
+        const add = BigInt(String(amountOctas))
+        const prev = BigInt(String(t.escrowOctas || '0'))
+        const next = prev + add
+        await Trip.updateOne({ id }, { $set: { escrowOctas: next.toString() } })
+      }
+    } catch (_) {}
     const count = await Participant.countDocuments({ tripId: id })
     return { participants: count }
   },
   async listParticipants(id) {
     const parts = await Participant.find({ tripId: id }).sort({ joinedAt: 1 }).lean()
-    return parts.map(p => ({ walletAddress: p.walletAddress, name: p.name || null }))
+    return parts.map(p => ({ walletAddress: p.walletAddress, name: p.name || null, age: Number.isInteger(p.age) ? p.age : null }))
+  },
+  async removeParticipant(id, organizer, participantWallet, reason) {
+    const t = await Trip.findOne({ id }).lean()
+    if (!t) return { notFound: true }
+    if (t.organizer !== organizer) return { forbidden: true }
+    const removed = await Participant.deleteOne({ tripId: id, walletAddress: participantWallet })
+    if (!removed.deletedCount) return { notFound: true }
+    // Remove joinedTrips reference
+    await User.updateOne({ walletAddress: participantWallet }, { $pull: { joinedTrips: id } })
+    // Send inbox message to participant
+    try {
+      const msgId = nano()
+      await Message.create({ id: msgId, from: organizer, to: participantWallet, type: 'organizer', subject: `Removed from trip ${t.title}`, body: reason || 'Organizer removed you from this trip.' })
+    } catch (_) {}
+    return { ok: true }
   },
   async delete(id) {
     // Remove trip, its participants, and references from users
@@ -265,14 +316,52 @@ export const trips = {
     const t = await Trip.findOne({ id }).lean()
     if (!t) return { notFound: true }
     if (t.organizer !== walletAddress) return { forbidden: true }
-    await Trip.updateOne({ id }, { $set: { status: 'canceled' } })
-    return { ok: true, status: 'canceled' }
+    // Compute penalty: if collected USD >= minFund -> organizer forfeits 20% of escrow
+    let penaltyOctas = '0'
+    try {
+      const participantsCount = await Participant.countDocuments({ tripId: id })
+      const collectedUsd = (Number(t.amount) || 0) * participantsCount
+      const minFundUsd = Number(t.minFund || 0)
+      if (minFundUsd > 0 && collectedUsd >= minFundUsd) {
+        const escrow = BigInt(String(t.escrowOctas || '0'))
+        const penalty = (escrow * BigInt(20)) / BigInt(100)
+        const remaining = escrow - penalty
+        penaltyOctas = penalty.toString()
+        await Trip.updateOne({ id }, { $set: { status: 'canceled', escrowOctas: remaining.toString() } })
+      } else {
+        await Trip.updateOne({ id }, { $set: { status: 'canceled' } })
+      }
+    } catch (_) {
+      await Trip.updateOne({ id }, { $set: { status: 'canceled' } })
+    }
+    return { ok: true, status: 'canceled', penaltyOctas }
   },
 }
 
 export const transactions = {
   async log({ tripId, from, to, amountOctas, status, hash, network }) {
     await Transaction.create({ tripId: tripId || null, from, to, amountOctas: String(amountOctas), status, hash: hash || null, network: network || 'unknown' })
+    return { ok: true }
+  },
+  async totalEscrow() {
+    const rows = await Trip.find({}, { escrowOctas: 1, _id: 0 }).lean()
+    const sum = rows.reduce((acc, r) => acc + BigInt(String(r.escrowOctas || '0')), BigInt(0))
+    return { octas: sum.toString() }
+  },
+}
+
+export const messages = {
+  async send({ from, to, type, subject, body }) {
+    const id = nano()
+    await Message.create({ id, from, to, type: type || 'organizer', subject: subject || null, body })
+    return { id }
+  },
+  async inboxFor(walletAddress) {
+    const rows = await Message.find({ to: walletAddress }).sort({ createdAt: -1 }).lean()
+    return rows.map(m => ({ id: m.id, from: m.from, to: m.to, type: m.type, subject: m.subject || null, body: m.body, createdAt: m.createdAt, read: !!m.read }))
+  },
+  async markRead(id, to) {
+    await Message.updateOne({ id, to }, { $set: { read: true } })
     return { ok: true }
   },
 }

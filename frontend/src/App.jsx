@@ -9,6 +9,7 @@ import JoinTrip from './pages/JoinTrip'
 import TripDetails from './pages/TripDetails'
 import PrivateTrip from './pages/PrivateTrip'
 import WalletVerify from './pages/WalletVerify'
+import Inbox from './pages/Inbox'
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
             <Route path="/join" element={<JoinTrip />} />
             <Route path="/trip/:id" element={<TripDetails />} />
             <Route path="/trip/code/:code" element={<PrivateTrip />} />
+            <Route path="/inbox" element={<Inbox />} />
           </Routes>
         </Layout>
       </Router>

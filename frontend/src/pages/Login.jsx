@@ -68,6 +68,14 @@ const Login = () => {
       })
       const data = await resp.json()
       if (!resp.ok) throw new Error(data?.error || 'Login failed')
+      // Upsert profile on backend so it persists across sessions
+      try {
+        await fetch(`${API_BASE}/api/users/${addr}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: data?.user?.username || '', profileImage: null })
+        })
+      } catch (_) {}
       connectWallet(addr)
       setProfile({ username: data?.user?.username || '', profileImage: null })
       navigate('/dashboard')
@@ -177,6 +185,14 @@ const Login = () => {
       if (!resp.ok) {
         throw new Error(data?.error || 'Login failed')
       }
+      // Persist username to backend so it can be read after relogin
+      try {
+        await fetch(`${API_BASE}/api/users/${addr}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: data?.user?.username || '', profileImage: data?.user?.profileImage || null })
+        })
+      } catch (_) {}
       // Only mark as connected AFTER successful verification + auth
       connectWallet(addr)
       setProfile({

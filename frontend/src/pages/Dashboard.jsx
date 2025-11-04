@@ -9,6 +9,9 @@ const Dashboard = () => {
   const [joinedTrips, setJoinedTrips] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showBug, setShowBug] = useState(false)
+  const [bugText, setBugText] = useState('')
+  const [bugSending, setBugSending] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -157,6 +160,59 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Floating Bug Report Button */}
+      <button
+        onClick={() => setShowBug(true)}
+        className="fixed bottom-6 right-6 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-lg px-5 py-3 font-semibold"
+        aria-label="Report a bug"
+      >
+        🐞 Report a bug
+      </button>
+
+      {/* Bug Report Modal */}
+      {showBug && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-3">Report a bug</h2>
+            <textarea
+              value={bugText}
+              onChange={(e) => setBugText(e.target.value)}
+              rows={6}
+              placeholder="Describe the bug you encountered..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white text-gray-900"
+            />
+            <div className="mt-4 flex justify-end space-x-3">
+              <button onClick={() => { setShowBug(false); setBugText('') }} className="px-4 py-2 rounded bg-gray-200 text-gray-800">Cancel</button>
+              <button
+                disabled={!bugText || bugSending || !walletAddress}
+                onClick={async () => {
+                  if (!bugText || !walletAddress) return
+                  setBugSending(true)
+                  try {
+                    const resp = await fetch(`${API_BASE}/api/messages`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ from: walletAddress, to: 'admin', type: 'bug', subject: 'Bug report', body: bugText })
+                    })
+                    if (!resp.ok) throw new Error((await resp.json())?.error || 'Failed to send bug report')
+                    setShowBug(false)
+                    setBugText('')
+                    alert('Bug report sent. Thank you!')
+                  } catch (e) {
+                    alert(e?.message || 'Failed to send bug report')
+                  } finally {
+                    setBugSending(false)
+                  }
+                }}
+                className={`px-4 py-2 rounded ${bugSending ? 'bg-primary-300' : 'bg-primary-600 hover:bg-primary-700'} text-white`}
+              >
+                {bugSending ? 'Sending...' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { initStore } from './store/index.js'
 import createUsersRouter from './routes/users.js'
 import createTripsRouter from './routes/trips.js'
 import createWalletRouter from './routes/wallet.js'
+import createMessagesRouter from './routes/messages.js'
 import createAuthRouter from './routes/auth.js'
 import { seedDemo } from './seed.js'
 
@@ -28,6 +29,7 @@ async function start() {
   app.use('/api/trips', createTripsRouter(store))
   app.use('/api/wallet', createWalletRouter())
   app.use('/api/auth', createAuthRouter(store))
+  app.use('/api/messages', createMessagesRouter(store))
 
   app.use((err, _req, res, _next) => {
     console.error('Unhandled error:', err)
